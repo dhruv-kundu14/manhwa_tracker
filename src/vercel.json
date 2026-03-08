@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/comick/(.*)",
-      "destination": "/api/comick?path=/$1"
+      "source": "/comick/:path*",
+      "destination": "/api/comick"
     }
   ]
 }

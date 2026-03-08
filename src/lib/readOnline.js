@@ -28,8 +28,8 @@ export const SOURCES = [
     color: '#3b82f6',
     icon: '📘',
     note: 'Great manga & manhwa library',
-    getTitleUrl: ({ title }) => `https://mangabuddy.com/manga/${slugify(title)}`,
-    getChapterUrl: ({ title, chapter }) => `https://mangabuddy.com/manga/${slugify(title)}/chapter-${chapter}`,
+    getTitleUrl: ({ title }) => `https://mangabuddy.com/search?q=${encodeURIComponent(title)}`,
+    getChapterUrl: ({ title, chapter }) => `https://mangabuddy.com/${slugify(title)}/chapter-${chapter}`,
     getSearchUrl: ({ title }) => `https://mangabuddy.com/search?q=${encodeURIComponent(title)}`,
   },
 ]

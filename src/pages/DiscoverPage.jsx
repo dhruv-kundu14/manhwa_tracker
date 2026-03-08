@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { searchComics, getTrending, GENRES, TYPES, STATUSES, LIMIT_PER_PAGE } from '../lib/comick.js'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { browseMedia, searchMedia, GENRES, TYPES, STATUSES } from '../lib/anilist.js'
 import { useLibraryStore } from '../store/libraryStore.js'
 import { SOURCES, openTitlePage, openSearchPage } from '../lib/readOnline.js'
 import Spinner from '../components/ui/Spinner.jsx'
 import {
-  Search, Plus, BookOpen, Filter, X,
+  Search, Plus, BookOpen, X,
   ChevronLeft, ChevronRight, ExternalLink, Check, Star,
-  Tag, Grid, List
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -16,80 +15,50 @@ const STATUS_COLOR = {
   completed: '#2dc653',
   cancelled: '#e94560',
   hiatus: '#f5a623',
+  upcoming: '#a855f7',
 }
 
 const ALPHA = ['#', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
   'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
 
-// ─── SEARCH: query ManhwaClan + MangaBuddy ────────────────────────────────────
-function getExternalSearchResults(query) {
-  if (!query.trim()) return []
-  return SOURCES.map((source) => ({
-    sourceId: source.id,
-    sourceName: source.name,
-    sourceIcon: source.icon,
-    sourceColor: source.color,
-    searchUrl: source.getSearchUrl({ title: query }),
-  }))
-}
-
 export default function DiscoverPage() {
-  const qc = useQueryClient()
   const addEntry = useLibraryStore((s) => s.addEntry)
   const entries = useLibraryStore((s) => s.entries)
 
-  // Mode: 'browse' | 'search'
   const [mode, setMode] = useState('browse')
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
-
-  // Browse filters
-  const [type, setType] = useState('manhwa')
-  const [selGenre, setSelGenre] = useState('')   // single genre filter
+  const [type, setType] = useState('MANHWA')
+  const [selGenre, setSelGenre] = useState('')
   const [status, setStatus] = useState('')
-  const [alpha, setAlpha] = useState('')   // letter filter
+  const [alpha, setAlpha] = useState('')
   const [page, setPage] = useState(1)
   const [readSource, setReadSource] = useState('manhwaclan')
 
   useEffect(() => { setPage(1) }, [type, selGenre, status, alpha])
 
-  // Build comick params for browse
-  const browseParams = {
-    query: alpha ? alpha : '',   // use alpha as query to get alphabetical
-    type,
-    status,
-    genres: selGenre ? [selGenre] : [],
-    page,
-  }
-
-  const queryKey = ['comick-browse', type, selGenre, status, alpha, page]
-
-  const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey,
-    queryFn: () => {
-      // For alphabetical: use sort=title with first letter
-      const params = {
-        type,
-        status,
-        genres: selGenre ? [selGenre] : [],
-        page,
-        query: alpha === '#' ? '' : alpha,
-      }
-      return searchComics(params)
-    },
+  // ── Browse query ────────────────────────────────────────────────────────────
+  const { data: browseData, isLoading, isFetching, isError, error } = useQuery({
+    queryKey: ['anilist-browse', type, selGenre, status, alpha, page],
+    queryFn: () => browseMedia({ type, status, genre: selGenre, alpha, page }),
     enabled: mode === 'browse',
     staleTime: 1000 * 60 * 5,
     placeholderData: keepPreviousData,
     retry: 2,
   })
 
-  const results = data?.results ?? []
-  const hasMore = data?.hasMore ?? false
+  // ── Search query ────────────────────────────────────────────────────────────
+  const { data: searchData, isLoading: searchLoading } = useQuery({
+    queryKey: ['anilist-search', query, type],
+    queryFn: () => searchMedia({ query, type }),
+    enabled: mode === 'search' && !!query,
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  })
 
-  // Sort results alphabetically client-side
-  const sortedResults = [...results].sort((a, b) =>
-    a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
-  )
+  const browseResults = browseData?.results ?? []
+  const searchResults = searchData?.results ?? []
+  const hasMore = browseData?.hasMore ?? false
 
   const handleSearch = () => {
     if (!input.trim()) return
@@ -105,14 +74,15 @@ export default function DiscoverPage() {
 
   const handleAdd = (comic) => {
     const result = addEntry({
-      id: String(comic.id),
+      id: comic.id,
       title: comic.title,
       coverUrl: comic.coverUrl,
       author: comic.author,
       genres: comic.genres,
       status: comic.status,
       description: comic.description,
-      mangadexId: comic.hid,
+      mangadexId: comic.id,
+      totalChapters: comic.chapters,
     }, 'WANT_TO_READ')
     if (result.ok) toast.success(`"${comic.title}" added to library!`)
     else toast.error(result.message ?? 'Already in library')
@@ -121,7 +91,7 @@ export default function DiscoverPage() {
   const isInLibrary = (comic) =>
     entries.some((e) =>
       e.manhwa?.title?.toLowerCase() === comic.title?.toLowerCase() ||
-      e.manhwa?.mangadexId === comic.hid
+      e.manhwa?.mangadexId === comic.id
     )
 
   const activeSource = SOURCES.find((s) => s.id === readSource)
@@ -129,7 +99,7 @@ export default function DiscoverPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-      {/* ── Read source toggle ──────────────────────────────────────── */}
+      {/* ── Read source toggle ─────────────────────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         padding: '10px 14px', marginBottom: 14,
@@ -151,11 +121,11 @@ export default function DiscoverPage() {
           </button>
         ))}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#444', fontFamily: 'var(--font-mono)' }}>
-          browse via comick.io · reads on {activeSource?.name}
+          browse via AniList · reads on {activeSource?.name}
         </span>
       </div>
 
-      {/* ── Search bar ──────────────────────────────────────────────── */}
+      {/* ── Search bar ─────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
         <div className="discover-search" style={{ flex: 1, marginBottom: 0 }}>
           <Search size={16} color="var(--muted)" />
@@ -163,7 +133,7 @@ export default function DiscoverPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Search title or keyword → opens on ManhwaClan / MangaBuddy…"
+            placeholder="Search title or keyword…"
           />
           {input && (
             <button onClick={handleClear} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 0 }}>
@@ -176,14 +146,14 @@ export default function DiscoverPage() {
         </button>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════
-          SEARCH MODE — show external links to ManhwaClan + MangaBuddy
-      ══════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          SEARCH MODE
+      ══════════════════════════════════════════════════════════════════════ */}
       {mode === 'search' && (
         <div>
           <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ fontSize: 13, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-              Search results for <strong style={{ color: 'var(--text)' }}>"{query}"</strong>
+              Results for <strong style={{ color: 'var(--text)' }}>"{query}"</strong>
             </div>
             <button onClick={handleClear} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
               ← Back to Browse
@@ -191,166 +161,103 @@ export default function DiscoverPage() {
           </div>
 
           {/* External search cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
             {SOURCES.map((source) => (
-              <a
-                key={source.id}
-                href={source.getSearchUrl({ title: query })}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ textDecoration: 'none' }}
-              >
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 16,
-                  padding: '16px 20px',
-                  background: 'var(--surface)', border: `1px solid var(--border)`,
-                  borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all .15s',
-                }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = source.color + '66'
-                    e.currentTarget.style.background = source.color + '0a'
+              <a key={source.id} href={source.getSearchUrl({ title: query })} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px',
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all .15s',
                   }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border)'
-                    e.currentTarget.style.background = 'var(--surface)'
-                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = source.color + '66'; e.currentTarget.style.background = source.color + '0a' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface)' }}
                 >
                   <div style={{
-                    width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+                    width: 46, height: 46, borderRadius: 10, flexShrink: 0, fontSize: 22,
                     background: `${source.color}18`, border: `1px solid ${source.color}33`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24,
-                  }}>
-                    {source.icon}
-                  </div>
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{source.icon}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
                       Search "{query}" on {source.name}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
                       {source.note} · Opens in new tab
                     </div>
                   </div>
-                  <ExternalLink size={18} color={source.color} style={{ opacity: 0.7 }} />
+                  <ExternalLink size={16} color={source.color} style={{ opacity: 0.7 }} />
                 </div>
               </a>
             ))}
           </div>
 
-          {/* Also show comick results as browseable cards */}
-          <div style={{
-            padding: '10px 14px', marginBottom: 16,
-            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-            fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)',
-          }}>
-            📚 Related titles from ComicK — click a card to open on <strong style={{ color: activeSource?.color }}>{activeSource?.name}</strong>
+          {/* AniList search results */}
+          <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginBottom: 12 }}>
+            📚 Related titles from AniList — add to library or click Read to open on {activeSource?.name}
           </div>
-          <ComickSearchResults query={query} readSource={readSource} entries={entries} onAdd={handleAdd} isInLibrary={isInLibrary} />
+          {searchLoading ? <LoadingSkeleton /> : searchResults.length === 0 ? (
+            <div className="empty-state">
+              <BookOpen size={36} className="empty-state-icon" />
+              <p className="empty-state-text">No results found for "{query}"</p>
+            </div>
+          ) : (
+            <div className="manhwa-grid">
+              {searchResults.map((comic) => (
+                <MediaCard key={comic.id} comic={comic} readSource={readSource}
+                  inLibrary={isInLibrary(comic)} onAdd={() => handleAdd(comic)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════
-          BROWSE MODE — genres sidebar + alphabetical grid
-      ══════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          BROWSE MODE
+      ══════════════════════════════════════════════════════════════════════ */}
       {mode === 'browse' && (
         <div style={{ display: 'flex', gap: 20 }}>
 
-          {/* ── Left sidebar: genres + filters ─────────────────────── */}
-          <div style={{ width: 180, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* ── Sidebar ──────────────────────────────────────────────────────── */}
+          <div style={{ width: 175, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Type */}
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Type</div>
+            <SidebarSection label="Type">
               {TYPES.map((t) => (
-                <button key={t.id} onClick={() => setType(t.id)} style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '6px 10px', marginBottom: 3, borderRadius: 6,
-                  fontSize: 12, cursor: 'pointer', transition: 'all .12s',
-                  border: `1px solid ${type === t.id ? 'var(--accent)' : 'transparent'}`,
-                  background: type === t.id ? 'rgba(233,69,96,.1)' : 'transparent',
-                  color: type === t.id ? 'var(--accent)' : 'var(--muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}>
-                  {t.label}
-                </button>
+                <SidebarBtn key={t.id} label={t.label} active={type === t.id} onClick={() => setType(t.id)} />
               ))}
-            </div>
+            </SidebarSection>
 
-            {/* Status */}
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Status</div>
+            <SidebarSection label="Status">
               {STATUSES.map((s) => (
-                <button key={s.id} onClick={() => setStatus(s.id)} style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '6px 10px', marginBottom: 3, borderRadius: 6,
-                  fontSize: 12, cursor: 'pointer', transition: 'all .12s',
-                  border: `1px solid ${status === s.id ? 'var(--accent)' : 'transparent'}`,
-                  background: status === s.id ? 'rgba(233,69,96,.1)' : 'transparent',
-                  color: status === s.id ? 'var(--accent)' : 'var(--muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}>
-                  {s.label}
-                </button>
+                <SidebarBtn key={s.id} label={s.label} active={status === s.id} onClick={() => setStatus(s.id)} />
               ))}
-            </div>
+            </SidebarSection>
 
-            {/* Genres */}
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Genre</div>
-              <button onClick={() => setSelGenre('')} style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                padding: '6px 10px', marginBottom: 3, borderRadius: 6,
-                fontSize: 12, cursor: 'pointer', transition: 'all .12s',
-                border: `1px solid ${selGenre === '' ? 'var(--accent)' : 'transparent'}`,
-                background: selGenre === '' ? 'rgba(233,69,96,.1)' : 'transparent',
-                color: selGenre === '' ? 'var(--accent)' : 'var(--muted)',
-                fontFamily: 'var(--font-mono)',
-              }}>All Genres</button>
+            <SidebarSection label="Genre">
+              <SidebarBtn label="All Genres" active={selGenre === ''} onClick={() => setSelGenre('')} />
               {GENRES.map((g) => (
-                <button key={g} onClick={() => setSelGenre(selGenre === g ? '' : g)} style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '6px 10px', marginBottom: 3, borderRadius: 6,
-                  fontSize: 12, cursor: 'pointer', transition: 'all .12s',
-                  border: `1px solid ${selGenre === g ? 'var(--accent)' : 'transparent'}`,
-                  background: selGenre === g ? 'rgba(233,69,96,.1)' : 'transparent',
-                  color: selGenre === g ? 'var(--accent)' : 'var(--muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}>
-                  {g}
-                </button>
+                <SidebarBtn key={g} label={g} active={selGenre === g} onClick={() => setSelGenre(selGenre === g ? '' : g)} />
               ))}
-            </div>
+            </SidebarSection>
           </div>
 
-          {/* ── Right: A-Z strip + grid ─────────────────────────────── */}
+          {/* ── Main area ────────────────────────────────────────────────────── */}
           <div style={{ flex: 1, minWidth: 0 }}>
 
-            {/* A-Z alphabet strip */}
+            {/* A-Z strip */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 16 }}>
-              <button onClick={() => setAlpha('')} style={{
-                padding: '4px 8px', borderRadius: 5, fontSize: 11,
-                fontFamily: 'var(--font-mono)', fontWeight: 700, cursor: 'pointer',
-                border: `1px solid ${alpha === '' ? 'var(--accent)' : 'var(--border)'}`,
-                background: alpha === '' ? 'rgba(233,69,96,.12)' : 'var(--surface)',
-                color: alpha === '' ? 'var(--accent)' : 'var(--muted)',
-              }}>ALL</button>
+              <AlphaBtn label="ALL" active={alpha === ''} onClick={() => setAlpha('')} wide />
               {ALPHA.map((l) => (
-                <button key={l} onClick={() => setAlpha(alpha === l ? '' : l)} style={{
-                  width: 30, height: 28, borderRadius: 5, fontSize: 11,
-                  fontFamily: 'var(--font-mono)', fontWeight: 700, cursor: 'pointer',
-                  border: `1px solid ${alpha === l ? 'var(--accent)' : 'var(--border)'}`,
-                  background: alpha === l ? 'rgba(233,69,96,.12)' : 'var(--surface)',
-                  color: alpha === l ? 'var(--accent)' : 'var(--muted)',
-                  transition: 'all .12s',
-                }}>{l}</button>
+                <AlphaBtn key={l} label={l} active={alpha === l} onClick={() => setAlpha(alpha === l ? '' : l)} />
               ))}
             </div>
 
-            {/* Results label */}
+            {/* Label row */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, minHeight: 22 }}>
               <div style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
                 {!isLoading && (
-                  selGenre ? `Genre: ${selGenre}` : alpha ? `Titles starting with "${alpha}"` : `Trending ${TYPES.find(t => t.id === type)?.label ?? ''}`
-                )} — Page {page}
+                  selGenre ? `Genre: ${selGenre}` : alpha ? `Titles starting with "${alpha}"` : `Popular ${TYPES.find(t => t.id === type)?.label ?? ''}`
+                )} · Page {page}
               </div>
               {isFetching && !isLoading && <Spinner size={14} />}
             </div>
@@ -358,11 +265,10 @@ export default function DiscoverPage() {
             {/* Grid */}
             {isLoading ? <LoadingSkeleton /> : isError ? (
               <div className="empty-state">
-                <p className="empty-state-text" style={{ color: 'var(--accent)' }}>Could not load titles.</p>
-                <p style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>{error?.message}</p>
-                <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => qc.invalidateQueries(['comick-browse'])}>Retry</button>
+                <p className="empty-state-text" style={{ color: 'var(--accent)' }}>Failed to load. {error?.message}</p>
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => window.location.reload()}>Retry</button>
               </div>
-            ) : sortedResults.length === 0 ? (
+            ) : browseResults.length === 0 ? (
               <div className="empty-state">
                 <BookOpen size={40} className="empty-state-icon" />
                 <p className="empty-state-text">No titles found. Try a different filter.</p>
@@ -370,14 +276,9 @@ export default function DiscoverPage() {
             ) : (
               <>
                 <div className="manhwa-grid" style={{ opacity: isFetching ? 0.6 : 1, transition: 'opacity .2s' }}>
-                  {sortedResults.map((comic) => (
-                    <ComicKCard
-                      key={comic.id ?? comic.hid}
-                      comic={comic}
-                      readSource={readSource}
-                      inLibrary={isInLibrary(comic)}
-                      onAdd={() => handleAdd(comic)}
-                    />
+                  {browseResults.map((comic) => (
+                    <MediaCard key={comic.id} comic={comic} readSource={readSource}
+                      inLibrary={isInLibrary(comic)} onAdd={() => handleAdd(comic)} />
                   ))}
                 </div>
 
@@ -407,37 +308,8 @@ export default function DiscoverPage() {
   )
 }
 
-// ─── ComicK search results shown below external links ─────────────────────────
-function ComickSearchResults({ query, readSource, entries, onAdd, isInLibrary }) {
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['comick-search', query],
-    queryFn: () => searchComics({ query, page: 1 }),
-    staleTime: 1000 * 60 * 5,
-    retry: 1,
-  })
-
-  const results = data?.results ?? []
-
-  if (isLoading) return <LoadingSkeleton />
-  if (isError || results.length === 0) return null
-
-  return (
-    <div className="manhwa-grid">
-      {results.map((comic) => (
-        <ComicKCard
-          key={comic.id ?? comic.hid}
-          comic={comic}
-          readSource={readSource}
-          inLibrary={isInLibrary(comic)}
-          onAdd={() => onAdd(comic)}
-        />
-      ))}
-    </div>
-  )
-}
-
-// ─── CARD ─────────────────────────────────────────────────────────────────────
-function ComicKCard({ comic, readSource, inLibrary, onAdd }) {
+// ─── Media Card ───────────────────────────────────────────────────────────────
+function MediaCard({ comic, readSource, inLibrary, onAdd }) {
   const [imgError, setImgError] = useState(false)
   const [hovered, setHovered] = useState(false)
 
@@ -448,7 +320,6 @@ function ComicKCard({ comic, readSource, inLibrary, onAdd }) {
   const source = SOURCES.find((s) => s.id === readSource)
 
   const handleOpen = () => openTitlePage(readSource, { title: comic.title })
-  const handleAdd = (e) => { e.stopPropagation(); onAdd() }
 
   return (
     <div className="manhwa-card" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
@@ -460,32 +331,40 @@ function ComicKCard({ comic, readSource, inLibrary, onAdd }) {
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, color: '#fff', textAlign: 'center', lineHeight: 1.2 }}>{comic.title}</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>{comic.title}</span>
           </div>
         )}
 
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg,rgba(0,0,0,.88) 0%,rgba(0,0,0,.05) 55%,transparent 100%)' }} />
 
         <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}>
-          <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', padding: '2px 7px', borderRadius: 4, background: 'rgba(0,0,0,.65)', color: statusColor, border: `1px solid ${statusColor}44` }}>
+          <span style={{
+            fontSize: 10, fontFamily: 'var(--font-mono)', padding: '2px 7px', borderRadius: 4,
+            background: 'rgba(0,0,0,.65)', color: statusColor, border: `1px solid ${statusColor}44`
+          }}>
             {comic.status}
           </span>
         </div>
 
         {comic.rating && (
-          <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(0,0,0,.65)', padding: '2px 6px', borderRadius: 4 }}>
+          <div style={{
+            position: 'absolute', top: 8, left: 8, zIndex: 2, display: 'flex', alignItems: 'center', gap: 3,
+            background: 'rgba(0,0,0,.65)', padding: '2px 6px', borderRadius: 4
+          }}>
             <Star size={9} fill="#f5a623" color="#f5a623" />
             <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: '#f5a623' }}>{comic.rating}</span>
           </div>
         )}
 
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '8px 10px', zIndex: 2, fontFamily: 'var(--font-display)', fontSize: 13, lineHeight: 1.2, color: '#fff' }}>
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, padding: '8px 10px', zIndex: 2,
+          fontFamily: 'var(--font-display)', fontSize: 13, lineHeight: 1.2, color: '#fff'
+        }}>
           {comic.title}
         </div>
 
         <div style={{
-          position: 'absolute', inset: 0, zIndex: 3,
-          background: 'rgba(0,0,0,.72)',
+          position: 'absolute', inset: 0, zIndex: 3, background: 'rgba(0,0,0,.72)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
           opacity: hovered ? 1 : 0, transition: 'opacity .2s',
         }}>
@@ -499,7 +378,10 @@ function ComicKCard({ comic, readSource, inLibrary, onAdd }) {
 
       <div className="manhwa-info">
         {comic.author && comic.author !== 'Unknown' && (
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{
+            fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginBottom: 5,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+          }}>
             {comic.author}
           </div>
         )}
@@ -507,7 +389,7 @@ function ComicKCard({ comic, readSource, inLibrary, onAdd }) {
           {comic.genres.slice(0, 2).map((g) => <span key={g} className="genre-tag">{g}</span>)}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={handleAdd} disabled={inLibrary} style={{
+          <button onClick={(e) => { e.stopPropagation(); onAdd() }} disabled={inLibrary} style={{
             flex: 1, padding: '6px 0', borderRadius: 6,
             fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 600,
             cursor: inLibrary ? 'default' : 'pointer',
@@ -533,7 +415,49 @@ function ComicKCard({ comic, readSource, inLibrary, onAdd }) {
   )
 }
 
-// ─── SKELETON ─────────────────────────────────────────────────────────────────
+// ─── Sidebar helpers ──────────────────────────────────────────────────────────
+function SidebarSection({ label, children }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)',
+        textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6
+      }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+function SidebarBtn({ label, active, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'block', width: '100%', textAlign: 'left',
+      padding: '6px 10px', marginBottom: 2, borderRadius: 6,
+      fontSize: 12, cursor: 'pointer', transition: 'all .12s',
+      border: `1px solid ${active ? 'var(--accent)' : 'transparent'}`,
+      background: active ? 'rgba(233,69,96,.1)' : 'transparent',
+      color: active ? 'var(--accent)' : 'var(--muted)',
+      fontFamily: 'var(--font-mono)',
+    }}>{label}</button>
+  )
+}
+
+function AlphaBtn({ label, active, onClick, wide }) {
+  return (
+    <button onClick={onClick} style={{
+      width: wide ? 'auto' : 30, height: 28,
+      padding: wide ? '0 10px' : 0,
+      borderRadius: 5, fontSize: 11,
+      fontFamily: 'var(--font-mono)', fontWeight: 700, cursor: 'pointer',
+      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+      background: active ? 'rgba(233,69,96,.12)' : 'var(--surface)',
+      color: active ? 'var(--accent)' : 'var(--muted)',
+      transition: 'all .12s',
+    }}>{label}</button>
+  )
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
 function LoadingSkeleton() {
   return (
     <div className="manhwa-grid">
