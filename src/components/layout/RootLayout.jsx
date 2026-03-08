@@ -7,6 +7,7 @@ import EditLibraryEntry from '../manhwa/EditLibraryEntry.jsx'
 import ManhwaDetailModal from '../manhwa/ManhwaDetailModal.jsx'
 import ReadOnlineModal from '../manhwa/ReadOnlineModal.jsx'
 import ShareManhwaModal from '../friends/ShareManhwaModal.jsx'
+import MobileNav from './mobilenav.jsx'
 import { useUiStore } from '../../store/uiStore.js'
 import './layout.css'
 
@@ -24,6 +25,17 @@ export default function RootLayout() {
       toggleSidebar()
     }
   }, [location.pathname])
+
+  // Auto collapse/expand on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768
+      if (mobile && sidebarOpen) toggleSidebar()
+      if (!mobile && !sidebarOpen) toggleSidebar()
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [sidebarOpen])
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768
 
@@ -53,6 +65,8 @@ export default function RootLayout() {
       {activeModal === 'detail' && <ManhwaDetailModal entry={modalData} onEdit={(e) => openModal('editEntry', e)} />}
       {activeModal === 'readOnline' && <ReadOnlineModal />}
       {activeModal === 'share' && <ShareManhwaModal />}
+
+      <MobileNav />
     </div>
   )
 }
