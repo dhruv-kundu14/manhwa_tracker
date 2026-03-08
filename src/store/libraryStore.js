@@ -10,7 +10,7 @@ function load() {
 }
 
 function save(entries) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)) } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)) } catch { }
 }
 
 function makeId() {
@@ -23,27 +23,27 @@ export const useLibraryStore = create((set, get) => ({
   // ── Add ──────────────────────────────────────────────────────────────
   addEntry: (manhwaData, readingStatus = 'WANT_TO_READ') => {
     const existing = get().entries.find(
-      (e) => e.manhwa.id === manhwaData.id || e.manhwa.title === manhwaData.title
+      (e) => String(e.manhwa.id) === String(manhwaData.id) || e.manhwa.title === manhwaData.title
     )
     if (existing) return { ok: false, message: 'Already in your library' }
 
     const entry = {
-      _id:            makeId(),
+      _id: makeId(),
       readingStatus,
       currentChapter: 0,
-      rating:         null,
-      notes:          '',
-      updatedAt:      new Date().toISOString(),
+      rating: null,
+      notes: '',
+      updatedAt: new Date().toISOString(),
       manhwa: {
-        _id:         manhwaData.id ?? makeId(),
-        id:          manhwaData.id ?? '',
-        title:       manhwaData.title,
-        coverUrl:    manhwaData.coverUrl    ?? null,
-        author:      manhwaData.author      ?? 'Unknown',
-        genres:      manhwaData.genres      ?? [],
-        status:      manhwaData.status      ?? 'ongoing',
+        _id: manhwaData.id ?? makeId(),
+        id: manhwaData.id ?? '',
+        title: manhwaData.title,
+        coverUrl: manhwaData.coverUrl ?? null,
+        author: manhwaData.author ?? 'Unknown',
+        genres: manhwaData.genres ?? [],
+        status: manhwaData.status ?? 'ongoing',
         description: manhwaData.description ?? '',
-        mangadexId:  manhwaData.mangadexId  ?? manhwaData.id ?? '',
+        mangadexId: manhwaData.mangadexId ?? manhwaData.id ?? '',
         totalChapters: manhwaData.totalChapters ?? null,
       },
     }
@@ -78,11 +78,11 @@ export const useLibraryStore = create((set, get) => ({
   getStats: () => {
     const entries = get().entries
     return {
-      reading:   entries.filter((e) => e.readingStatus === 'READING').length,
+      reading: entries.filter((e) => e.readingStatus === 'READING').length,
       completed: entries.filter((e) => e.readingStatus === 'COMPLETED').length,
-      wishlist:  entries.filter((e) => e.readingStatus === 'WANT_TO_READ').length,
-      dropped:   entries.filter((e) => e.readingStatus === 'DROPPED').length,
-      total:     entries.length,
+      wishlist: entries.filter((e) => e.readingStatus === 'WANT_TO_READ').length,
+      dropped: entries.filter((e) => e.readingStatus === 'DROPPED').length,
+      total: entries.length,
     }
   },
 
@@ -90,10 +90,10 @@ export const useLibraryStore = create((set, get) => ({
   exportLibrary: () => {
     const data = JSON.stringify(get().entries, null, 2)
     const blob = new Blob([data], { type: 'application/json' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    a.download = `manhwa-library-${new Date().toISOString().slice(0,10)}.json`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `manhwa-library-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
   },

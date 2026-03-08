@@ -6,24 +6,24 @@ import { useAuthStore } from '../../store/authStore.js'
 import { useLogout } from '../../hooks/useAuth.js'
 
 const NAV = [
-  { to: '/dashboard',     label: 'Dashboard',      Icon: LayoutDashboard },
-  { to: '/library',       label: 'Library',        Icon: BookOpen        },
-  { to: '/discover',      label: 'Discover',       Icon: Compass         },
-  { to: '/friends',       label: 'Friends',        Icon: Users           },
-  { to: '/notifications', label: 'Notifications',  Icon: Bell, badge: true },
+  { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+  { to: '/library', label: 'Library', Icon: BookOpen },
+  { to: '/discover', label: 'Discover', Icon: Compass },
+  { to: '/friends', label: 'Friends', Icon: Users },
+  { to: '/notifications', label: 'Notifications', Icon: Bell, badge: true },
 ]
 
 const BOTTOM_NAV = [
-  { to: '/profile',  label: 'Profile',  Icon: User     },
+  { to: '/profile', label: 'Profile', Icon: User },
   { to: '/settings', label: 'Settings', Icon: Settings },
 ]
 
-export default function Sidebar() {
-  const user              = useAuthStore((s) => s.user)
+export default function Sidebar({ className = '' }) {
+  const user = useAuthStore((s) => s.user)
   const { mutate: logout } = useLogout()
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${className}`}>
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="logo-mark">M</div>
