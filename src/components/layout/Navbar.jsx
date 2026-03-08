@@ -5,19 +5,19 @@ import { useUiStore } from '../../store/uiStore.js'
 import { useState } from 'react'
 
 const PAGE_TITLES = {
-  '/dashboard':     'Dashboard',
-  '/library':       'My Library',
-  '/discover':      'Discover',
-  '/friends':       'Friends',
+  '/dashboard': 'Dashboard',
+  '/library': 'My Library',
+  '/discover': 'Discover',
+  '/friends': 'Friends',
   '/notifications': 'Notifications',
-  '/profile':       'Profile',
-  '/settings':      'Settings',
+  '/profile': 'Profile',
+  '/settings': 'Settings',
 }
 
 export default function Navbar() {
-  const navigate      = useNavigate()
-  const location      = useLocation()
-  const openModal     = useUiStore((s) => s.openModal)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const openModal = useUiStore((s) => s.openModal)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const [search, setSearch] = useState('')
 
@@ -37,6 +37,10 @@ export default function Navbar() {
       </button>
 
       <h1 className="topbar-title">{title}</h1>
+
+      <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+        made with ❤️ by DK
+      </div>
 
       <div className="topbar-right">
         <div className="search-box">
