@@ -4,7 +4,9 @@
  * PRODUCTION: BASE='/comick' → vercel.json rewrite → /api/comick serverless fn → https://api.comick.app
  */
 
-const BASE = '/comick'
+// const BASE = '/comick'
+const BASE = 'https://corsproxy.io/?' + encodeURIComponent('https://api.comick.dev');
+
 const COVER_BASE = 'https://meo.comick.pictures'
 const LIMIT = 20
 
@@ -58,7 +60,7 @@ export function normalizeComic(item) {
     year: item.year,
     type: item.country ?? 'jp',
     rating: item.bayesian_rating ? Number(item.bayesian_rating).toFixed(1) : null,
-    comickUrl: item.slug ? `https://comick.io/comic/${item.slug}` : null,
+    comickUrl: item.slug ? `https://comick.dev/comic/${item.slug}` : null,
   }
 }
 
